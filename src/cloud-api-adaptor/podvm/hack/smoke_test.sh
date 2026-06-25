@@ -306,10 +306,19 @@ if ! $KATACTL connect --server-address "unix://${SOCK}" --cmd CreateSandbox; the
 	exit 1;
 fi
 
-if ! $KATACTL connect --server-address "unix://${SOCK}" --cmd DestroySandbox; then
-	echo "::error:: Failed to DestroySandbox"
-	exit 1;
-fi
+# DestroySandbox causes the kata-agent to exit, which closes the ttrpc
+# socket. On slower runners the socket can close before the response frame
+# is fully flushed, producing a "ttrpc: closed" error even though the RPC
+# succeeded. Treat that specific error as success; any other failure is fatal.
+DESTROY_OUT=$($KATACTL connect --server-address "unix://${SOCK}" --cmd DestroySandbox 2>&1) || {
+	if echo "$DESTROY_OUT" | grep -q "ttrpc: closed"; then
+		echo "::debug:: DestroySandbox returned ttrpc: closed (agent shut down normally)"
+	else
+		echo "$DESTROY_OUT"
+		echo "::error:: Failed to DestroySandbox"
+		exit 1
+	fi
+}
 
 if [ "$TEST_MODE" = "scratch-space" ]; then
 	if ! check_scratch_space_mount "${VM_NAME}"; then

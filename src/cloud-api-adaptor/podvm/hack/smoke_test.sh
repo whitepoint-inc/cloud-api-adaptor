@@ -166,7 +166,7 @@ if [ -z "$KATACTL" ]; then
 	KATA_REG=$(yq -e '.oci.kata-containers.registry' ${SCRIPTDIR}/../../versions.yaml)
 	echo "::debug:: Pulling kata-ctl from ${KATA_REG}/agent-ctl:${KATA_REF}-x86_64"
 	oras pull "${KATA_REG}/agent-ctl:${KATA_REF}-x86_64"
-	tar --ztsd -xvf kata-static-agent-ctl.tar.zst ./opt/kata/bin/kata-agent-ctl --transform='s/opt\/kata\/bin\/kata-agent-ctl/kata-agent-ctl/'
+	tar --zstd -xvf kata-static-agent-ctl.tar.zst ./opt/kata/bin/kata-agent-ctl --transform='s/opt\/kata\/bin\/kata-agent-ctl/kata-agent-ctl/'
 	rm kata-static-agent-ctl.tar.zst
 	KATACTL=$(realpath kata-agent-ctl)
 	chmod +x "$KATACTL"
@@ -258,7 +258,7 @@ fi
 
 sudo virt-install \
 	--name "${VM_NAME}" \
-	--ram 1024 \
+	--ram 2048 \
 	--vcpus 2 \
 	--disk "path=${IMAGE},format=${FMT}" \
 	--disk "path=${WORKDIR}/cloud-init.iso,device=cdrom" \

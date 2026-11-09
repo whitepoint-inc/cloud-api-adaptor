@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Runs right after package installation, before mkosi's first depmod pass.
+#
+# Canonical's linux-modules-nvidia-595-server-open-<kver> packages ship a stray, empty
+# ./lib/modules/kernel/nvidia-595srv-open/ directory next to the real modules under
+# ./lib/modules/<kver>/kernel/. mkosi treats every non-empty directory in /usr/lib/modules
+# as a kernel version and fails on `depmod --all kernel` ("Bad version passed kernel").
+# Remove only empty directories, so real content there would still fail the build loudly.
+
+set -euo pipefail
+
+[[ "${1:-}" == "final" ]] || exit 0
+
+if [[ -d /usr/lib/modules/kernel ]]; then
+	find /usr/lib/modules/kernel -depth -type d -empty -delete
+fi

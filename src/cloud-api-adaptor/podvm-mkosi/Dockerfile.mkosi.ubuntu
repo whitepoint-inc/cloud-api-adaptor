@@ -37,6 +37,7 @@ COPY mkosi.images /image/mkosi.images
 COPY mkosi.skeleton-debug /image/mkosi.skeleton-debug
 COPY mkosi.skeleton-sftp /image/mkosi.skeleton-sftp
 COPY mkosi.workspace /image/mkosi.workspace
+COPY mkosi.sandbox /image/mkosi.sandbox
 COPY resources /image/resources
 COPY mkosi.conf.ubuntu /image/mkosi.conf
 RUN --security=insecure mkosi --profile=$PROFILE --image-version=$IMAGE_VERSION

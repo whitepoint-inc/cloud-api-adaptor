@@ -1,0 +1,21 @@
+[Unit]
+Description=Create NVIDIA device nodes and the CDI spec for kata-agent (GPU peer-pod)
+Documentation=https://github.com/whitepoint-inc/fort-ai/blob/main/docs/h100-migration-plan.md
+After=systemd-modules-load.service nvidia-persistenced.service
+Wants=nvidia-persistenced.service
+# kata-agent must see /var/run/cdi/nvidia.yaml before it creates the first container.
+# Ordering only: on a VM without a GPU this unit fails and kata-agent still starts.
+Before=kata-agent.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/bin/mkdir -p /var/run/cdi
+# Device nodes: /dev/nvidia0, /dev/nvidiactl (via nvidia-smi) and /dev/nvidia-uvm.
+ExecStartPre=/usr/bin/nvidia-modprobe -u -c=0
+ExecStartPre=/usr/bin/nvidia-smi -pm 1
+ExecStart=/usr/bin/nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml --format=yaml
+ExecStartPost=/usr/bin/nvidia-ctk cdi list
+
+[Install]
+WantedBy=multi-user.target

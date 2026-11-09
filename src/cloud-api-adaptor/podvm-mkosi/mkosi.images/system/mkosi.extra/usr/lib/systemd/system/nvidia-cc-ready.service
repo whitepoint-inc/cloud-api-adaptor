@@ -1,0 +1,17 @@
+[Unit]
+Description=Set the NVIDIA GPU Confidential Computing ready state
+Documentation=https://docs.nvidia.com/confidential-computing/
+# In CC mode the H100 refuses work until the guest sets the ready state. Done at boot for
+# now; the GPU attester can take this over once attestation gates it (Phase 4).
+After=nvidia-cdi.service
+Before=kata-agent.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# "-": not fatal on a GPU that is not in CC mode (or no GPU at all).
+ExecStart=-/usr/bin/nvidia-smi conf-compute -srs 1
+ExecStartPost=-/usr/bin/nvidia-smi conf-compute -grs
+
+[Install]
+WantedBy=multi-user.target

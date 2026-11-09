@@ -57,3 +57,10 @@ else
 	systemctl enable process-user-data.service
 	# These units doesn't exist in regular and debug profiles
 fi
+
+# GPU peer-pod (x86-64 ubuntu only; see mkosi.conf.d/ubuntu-nvidia.conf): device nodes, the
+# CDI spec and the CC ready state must be in place before kata-agent starts a container.
+if [[ -f /usr/lib/systemd/system/nvidia-cdi.service ]]; then
+	systemctl enable nvidia-cdi.service nvidia-cc-ready.service
+	systemctl enable nvidia-persistenced.service || true
+fi

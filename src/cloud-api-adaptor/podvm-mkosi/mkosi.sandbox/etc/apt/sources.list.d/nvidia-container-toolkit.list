@@ -1,0 +1,4 @@
+# NVIDIA container toolkit (nvidia-ctk, nvidia-cdi-hook): the CDI spec generator and hooks
+# the kata-agent uses to hand the H100 to the pod's containers. Flat, signed repository;
+# the key is NVIDIA's "Open Source Projects" key (cudatools@nvidia.com).
+deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit.gpg] https://nvidia.github.io/libnvidia-container/stable/deb/amd64 /

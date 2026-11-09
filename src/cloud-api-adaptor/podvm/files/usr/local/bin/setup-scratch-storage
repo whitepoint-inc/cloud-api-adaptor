@@ -11,7 +11,7 @@
 # ~63 GB model plus the vLLM image.
 #
 # The local temp disk sits outside the SEV-SNP boundary (the host can read and write it), so
-# it is always LUKS2-encrypted with dm-integrity (luks-encrypt-storage defaults) under a key
+# it is always LUKS2-encrypted (AES-XTS; dm-integrity off, see below) under a key
 # drawn from the guest RNG at boot and kept only in guest memory. Nothing about the key or
 # the volume is measured or baked into the image: the image stays bit-identical and the PCRs
 # stay stable whatever the key. Do NOT add tpm2-measure-pcr / pcrfs-style measurement here.
@@ -82,7 +82,13 @@ if [ -n "$DEV_PATH" ]; then
     wipefs --all --quiet "$DEV_PATH"
     STAGING=/run/kata-scratch
     head -c 4096 /dev/urandom >"$KEY_PATH"
-    /usr/local/bin/luks-encrypt-storage "$(lsblk -dno MAJ:MIN "$DEV_PATH" | xargs)" false "$STAGING" "$KEY_PATH"
+    # Plain LUKS2 (AES-XTS), NOT dm-integrity (5th arg "false"). With integrity, the
+    # upstream --integrity-no-wipe format leaves every never-written sector without a valid
+    # tag, and ext4's lazily initialised inode tables are read before they are written:
+    # INTEGRITY AEAD ERROR -> "unable to read itable block" -> the vLLM image unpack failed
+    # (0.21.102 pod VM serial console). Integrity needs mkfs with lazy_itable_init=0 (and
+    # fewer inodes); tracked in docs/h100-migration-plan.md.
+    /usr/local/bin/luks-encrypt-storage "$(lsblk -dno MAJ:MIN "$DEV_PATH" | xargs)" false "$STAGING" "$KEY_PATH" false
     for sub in image shared; do
         mkdir -p "${STAGING}/${sub}" "/run/kata-containers/${sub}"
         mount --bind "${STAGING}/${sub}" "/run/kata-containers/${sub}"

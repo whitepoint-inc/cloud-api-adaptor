@@ -1,4 +1,20 @@
 #!/bin/bash
+#
+# Encrypted scratch storage for the kata agent (runs before kata-agent.service when the
+# cloud-api-adaptor sets ENABLE_SCRATCH_SPACE, i.e. writes /run/peerpod/scratch-space.marker).
+#
+# fort-ai fork: prefer the VM's LOCAL TEMP DISK (e.g. the 800 GiB disk of
+# Standard_NCC40ads_H100_v5) over upstream's systemd-repart `trusted_store` partition on the
+# OS disk, and put BOTH the guest-pull image store (/run/kata-containers/image: layers and
+# container writable layers) and kata's local emptyDir volumes (/run/kata-containers/shared)
+# on it. Without this they live in the RAM-backed /run (20% of RAM), which cannot hold a
+# ~63 GB model plus the vLLM image.
+#
+# The local temp disk sits outside the SEV-SNP boundary (the host can read and write it), so
+# it is always LUKS2-encrypted with dm-integrity (luks-encrypt-storage defaults) under a key
+# drawn from the guest RNG at boot and kept only in guest memory. Nothing about the key or
+# the volume is measured or baked into the image: the image stays bit-identical and the PCRs
+# stay stable whatever the key. Do NOT add tpm2-measure-pcr / pcrfs-style measurement here.
 
 set -o errexit
 set -o nounset
@@ -16,39 +32,81 @@ handle_error() {
 }
 trap 'handle_error $LINENO' ERR
 
-die() {
-    local msg="$*"
-    echo >&2 "ERROR: $msg"
-    exit 1
+KEY_PATH=/run/encrypt_storage.key
+MIN_LOCAL_DISK_BYTES=$((32 * 1024 * 1024 * 1024))
+
+# Whole disks that hold the root filesystem, the ESP or the trusted_store partition are the OS
+# disk. Any partition or disk with holders (dm-verity/dm-crypt) or mounts is in use.
+MOUNTED_SOURCES="$(findmnt -rno SOURCE)"
+is_mounted() { grep -qx "/dev/$1" <<<"$MOUNTED_SOURCES"; }
+
+disk_in_use() {
+    local disk="$1" part
+    [ -n "$(ls -A "/sys/block/${disk}/holders" 2>/dev/null)" ] && return 0
+    is_mounted "$disk" && return 0
+    for part in /sys/block/"${disk}"/"${disk}"*; do
+        [ -e "$part" ] || continue
+        part="$(basename "$part")"
+        [ -n "$(ls -A "/sys/block/${disk}/${part}/holders" 2>/dev/null)" ] && return 0
+        is_mounted "$part" && return 0
+        [ "$(lsblk -dno LABEL "/dev/${part}" 2>/dev/null)" = "trusted_store" ] && return 0
+    done
+    return 1
 }
 
-# Check if the trusted_store device exists
+find_local_temp_disk() {
+    local sys disk size found=()
+    for sys in /sys/block/sd* /sys/block/nvme*n*; do
+        [ -e "$sys" ] || continue
+        disk="$(basename "$sys")"
+        [ "$(cat "${sys}/removable")" = "0" ] || continue
+        [ "$(cat "${sys}/ro")" = "0" ] || continue
+        size=$(( $(cat "${sys}/size") * 512 ))
+        [ "$size" -ge "$MIN_LOCAL_DISK_BYTES" ] || continue
+        disk_in_use "$disk" && continue
+        found+=("$disk")
+    done
+    # Exactly one candidate, or none: never guess between several disks.
+    if [ "${#found[@]}" -eq 1 ]; then
+        echo "/dev/${found[0]}"
+    elif [ "${#found[@]}" -gt 1 ]; then
+        echo >&2 "multiple unused disks (${found[*]}); not choosing one"
+    fi
+}
+
+DEV_PATH="$(find_local_temp_disk)"
+if [ -n "$DEV_PATH" ]; then
+    echo "Using local temp disk ${DEV_PATH} ($(lsblk -dno SIZE "$DEV_PATH")) for scratch storage"
+    # Discard whatever the platform pre-formatted on it (e.g. Azure's NTFS partition): the
+    # encrypted volume is recreated from scratch on every boot anyway.
+    wipefs --all --quiet "$DEV_PATH"
+    STAGING=/run/kata-scratch
+    head -c 4096 /dev/urandom >"$KEY_PATH"
+    /usr/local/bin/luks-encrypt-storage "$(lsblk -dno MAJ:MIN "$DEV_PATH" | xargs)" false "$STAGING" "$KEY_PATH"
+    for sub in image shared; do
+        mkdir -p "${STAGING}/${sub}" "/run/kata-containers/${sub}"
+        mount --bind "${STAGING}/${sub}" "/run/kata-containers/${sub}"
+    done
+    echo "Scratch storage setup completed (image + shared on encrypted local disk)"
+    exit 0
+fi
+
+# Upstream behavior: the trusted_store partition systemd-repart creates on the OS disk.
 DISK_LABEL="trusted_store"
 DEV_PATH="/dev/disk/by-label/$DISK_LABEL"
-
 if [ ! -L "$DEV_PATH" ]; then
     echo "Device for label $DISK_LABEL not found. Exiting."
     exit 1
 fi
-
-# Resolve the device path
 DEV_PATH=$(readlink -f "$DEV_PATH")
 if [ ! -b "$DEV_PATH" ]; then
     echo "Device $DEV_PATH is not a block device. Exiting."
     exit 1
 fi
-
-# Create mount point
 MOUNT_POINT="/run/kata-containers/image"
 mkdir -p "$MOUNT_POINT"
-
-# Get device number for the encryption script
-# Using xargs to strip leading/trailing whitespace
 DEV_NUM=$(lsblk -no MAJ:MIN "$DEV_PATH" | xargs)
-
-# Generate encryption key and use LUKS encryption
 echo "Setting up LUKS encrypted scratch storage"
-head -c 4096 /dev/urandom >/run/encrypt_storage.key
-/usr/local/bin/luks-encrypt-storage "$DEV_NUM" false "$MOUNT_POINT" /run/encrypt_storage.key
-
+head -c 4096 /dev/urandom >"$KEY_PATH"
+/usr/local/bin/luks-encrypt-storage "$DEV_NUM" false "$MOUNT_POINT" "$KEY_PATH"
 echo "Scratch storage setup completed"

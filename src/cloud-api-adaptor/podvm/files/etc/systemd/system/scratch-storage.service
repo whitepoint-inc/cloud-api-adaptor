@@ -1,6 +1,9 @@
 [Unit]
 Description=Configurable Scratch Storage Setup for Kata Agent
 After=systemd-repart.service
+# fort-ai fork: the bind mount of /run/kata-containers (run-kata\x2dcontainers.mount) must be in
+# place first, or it would shadow the image/ and shared/ mounts this unit creates beneath it.
+RequiresMountsFor=/run/kata-containers
 # It must complete before the kata-agent starts
 Before=kata-agent.service
 DefaultDependencies=no

@@ -10,6 +10,10 @@ Before=kata-agent.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# The first attempt can fail on boot (seen on the serial console, run 0.21.101) while the
+# driver is still settling; retry instead of leaving kata-agent without a CDI spec.
+Restart=on-failure
+RestartSec=5
 ExecStartPre=/usr/bin/mkdir -p /var/run/cdi
 # Device nodes: /dev/nvidia0, /dev/nvidiactl (via nvidia-smi) and /dev/nvidia-uvm.
 ExecStartPre=/usr/bin/nvidia-modprobe -u -c=0

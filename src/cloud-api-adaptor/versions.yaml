@@ -62,4 +62,4 @@ oci:
     reference: bef049d07e34d467b3a0910fdc65f30aa4647a0a # v3.31.0 + tagging fix
   guest-components:
     registry: ghcr.io/confidential-containers/guest-components
-    reference: f1561038b9a58d309a3366cc8e25d8e6162424a0
+    reference: 095f5c040377b7bce2c42a7d133e27c869010dee # 2026-11-17: az-snp-vtpm get_runtime_measurement (AAEL extend works) + cc_eventlog in evidence
